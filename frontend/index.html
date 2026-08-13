@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width,initial-scale=1">
+
+<title>MIRZA Media Utility</title>
+
+<style>
+
+body{
+font-family:Arial;
+background:#070b12;
+color:white;
+margin:0;
+padding:25px;
+}
+
+.container{
+max-width:1000px;
+margin:auto;
+}
+
+h1{
+color:#00d9ff;
+}
+
+.panel{
+background:#101925;
+border:1px solid #263342;
+border-radius:15px;
+padding:20px;
+margin-bottom:20px;
+}
+
+button{
+border:0;
+padding:12px 16px;
+margin:5px;
+border-radius:8px;
+background:#007fa3;
+color:white;
+cursor:pointer;
+}
+
+button:hover{
+background:#00a9d0;
+}
+
+.stop{
+background:#b92743;
+}
+
+video{
+width:100%;
+max-width:600px;
+margin-top:15px;
+border-radius:10px;
+background:#000;
+}
+
+.status{
+padding:12px;
+background:#0a111a;
+border-radius:8px;
+margin-top:15px;
+color:#9eacba;
+}
+
+.recording{
+color:#ff526d;
+font-weight:bold;
+}
+
+.gallery{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+gap:15px;
+}
+
+.item{
+background:#0a111a;
+padding:12px;
+border-radius:10px;
+}
+
+.item img,
+.item video,
+.item audio{
+width:100%;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>MIRZA Media Utility</h1>
+
+<div class="panel">
+
+<h2>Camera</h2>
+
+<p>
+Camera access requires browser permission.
+</p>
+
+<button onclick="enableCamera()">
+Allow Camera
+</button>
+
+<button onclick="takePhoto()">
+Take Photo
+</button>
+
+<button onclick="startVideo()">
+Start Recording
+</button>
+
+<button class="stop"
+onclick="stopVideo()">
+Stop & Save
+</button>
+
+<br>
+
+<video
+id="preview"
+autoplay
+playsinline>
+</video>
+
+<canvas
+id="canvas"
+style="display:none">
+</canvas>
+
+<div id="cameraStatus"
+class="status">
+Camera OFF
+</div>
+
+</div>
+
+
+<div class="panel">
+
+<h2>Microphone</h2>
+
+<p>
+Microphone access requires browser permission.
+</p>
+
+<button onclick="startAudio()">
+Allow Microphone
+</button>
+
+<button onclick="stopAudio()"
+class="stop">
+Stop & Save Audio
+</button>
+
+<div id="micStatus"
+class="status">
+Microphone OFF
+</div>
+
+</div>
+
+
+<div class="panel">
+
+<h2>Media Gallery</h2>
+
+<button onclick="loadGallery()">
+Refresh Gallery
+</button>
+
+<div
+id="gallery"
+class="gallery">
+</div>
+
+</div>
+
+</div>
+
+
+<script>
+
+const API =
+"http://localhost:3000";
+
+let cameraStream = null;
+
+let videoRecorder = null;
+
+let videoChunks = [];
+
+let audioRecorder = null;
+
+let audioChunks = [];
+
+
+/* CAMERA */
+
+async function enableCamera(){
+
+try{
+
+cameraStream =
+await navigator.mediaDevices
+.getUserMedia({
+video:true
+});
+
+document.getElementById(
+"preview"
+).srcObject =
+cameraStream;
+
+document.getElementById(
+"cameraStatus"
+).textContent =
+"Camera ACTIVE";
+
+}catch(error){
+
+alert(
+"Camera permission was denied."
+);
+
+}
+
+}
+
+
+/* PHOTO */
+
+async function takePhoto(){
+
+if(!cameraStream){
+
+await enableCamera();
+
+}
+
+const video =
+document.getElementById(
+"preview"
+);
+
+const canvas =
+document.getElementById(
+"canvas"
+);
+
+canvas.width =
+video.videoWidth;
+
+canvas.height =
+video.videoHeight;
+
+const ctx =
+canvas.getContext("2d");
+
+ctx.drawImage(
+video,
+0,
+0,
+canvas.width,
+canvas.height
+);
+
+canvas.toBlob(
+async blob => {
+
+await uploadMedia(
+blob,
+"photo.jpg"
+);
+
+},
+"image/jpeg"
+);
+
+}
+
+
+/* VIDEO START */
+
+function startVideo(){
+
+if(!cameraStream){
+
+alert(
+"Allow camera first."
+);
+
+return;
+
+}
+
+videoChunks = [];
+
+videoRecorder =
+new MediaRecorder(
+cameraStream
+);
+
+videoRecorder.ondataavailable =
+e => {
+
+if(e.data.size > 0){
+
+videoChunks.push(e.data);
+
+}
+
+};
+
+videoRecorder.onstop =
+async () => {
+
+const blob =
+new Blob(
+videoChunks,
+{
+type:"video/webm"
+}
+);
+
+await uploadMedia(
+blob,
+"recording.webm"
+);
+
+};
+
+videoRecorder.start();
+
+document.getElementById(
+"cameraStatus"
+).innerHTML =
+'<span class="recording">● RECORDING</span>';
+
+}
+
+
+/* VIDEO STOP */
+
+function stopVideo(){
+
+if(
+videoRecorder &&
+videoRecorder.state !== "inactive"
+){
+
+videoRecorder.stop();
+
+document.getElementById(
+"cameraStatus"
+).textContent =
+"Camera ACTIVE";
+
+}
+
+}
+
+
+/* MICROPHONE */
+
+async function startAudio(){
+
+try{
+
+const stream =
+await navigator.mediaDevices
+.getUserMedia({
+audio:true
+});
+
+audioChunks = [];
+
+audioRecorder =
+new MediaRecorder(
+stream
+);
+
+audioRecorder.ondataavailable =
+e => {
+
+if(e.data.size > 0){
+
+audioChunks.push(e.data);
+
+}
+
+};
+
+audioRecorder.onstop =
+async () => {
+
+const blob =
+new Blob(
+audioChunks,
+{
+type:"audio/webm"
+}
+);
+
+await uploadMedia(
+blob,
+"recording.webm"
+);
+
+stream
+.getTracks()
+.forEach(
+track =>
+track.stop()
+);
+
+};
+
+audioRecorder.start();
+
+document.getElementById(
+"micStatus"
+).innerHTML =
+'<span class="recording">● RECORDING</span>';
+
+}catch(error){
+
+alert(
+"Microphone permission was denied."
+);
+
+}
+
+}
+
+
+/* AUDIO STOP */
+
+function stopAudio(){
+
+if(
+audioRecorder &&
+audioRecorder.state !== "inactive"
+){
+
+audioRecorder.stop();
+
+document.getElementById(
+"micStatus"
+).textContent =
+"Microphone OFF";
+
+}
+
+}
+
+
+/* UPLOAD */
+
+async function uploadMedia(
+blob,
+filename
+){
+
+const form =
+new FormData();
+
+form.append(
+"media",
+blob,
+filename
+);
+
+try{
+
+const response =
+await fetch(
+API + "/api/upload",
+{
+method:"POST",
+body:form
+}
+);
+
+const data =
+await response.json();
+
+if(data.success){
+
+alert(
+"Media saved successfully."
+);
+
+loadGallery();
+
+}
+
+}catch(error){
+
+alert(
+"Backend connection failed."
+);
+
+}
+
+}
+
+
+/* GALLERY */
+
+async function loadGallery(){
+
+const gallery =
+document.getElementById(
+"gallery"
+);
+
+gallery.innerHTML =
+"Loading...";
+
+try{
+
+const response =
+await fetch(
+API + "/api/media"
+);
+
+const files =
+await response.json();
+
+gallery.innerHTML = "";
+
+files.reverse()
+.forEach(file => {
+
+const item =
+document.createElement(
+"div"
+);
+
+item.className =
+"item";
+
+if(
+file.type === "photos"
+){
+
+item.innerHTML =
+`
+<img src="${API}${file.url}">
+<p>${file.name}</p>
+`;
+
+}
+
+else if(
+file.type === "videos"
+){
+
+item.innerHTML =
+`
+<video
+controls
+src="${API}${file.url}">
+</video>
+
+<p>${file.name}</p>
+`;
+
+}
+
+else{
+
+item.innerHTML =
+`
+<audio
+controls
+src="${API}${file.url}">
+</audio>
+
+<p>${file.name}</p>
+`;
+
+}
+
+gallery.appendChild(
+item
+);
+
+});
+
+}catch(error){
+
+gallery.innerHTML =
+"Backend is offline.";
+
+}
+
+}
+
+</script>
+
+</body>
+</html>
